@@ -331,6 +331,7 @@ def main_processing_loop(
     threshold: int = 30,
     roi_file: str = None,
     window_size: int = 10,
+    trajectory_similarity: float = 0.2,
     min_area: int = 2
 ):
     """Main processing loop for tracking objects in stereo images"""
@@ -443,7 +444,7 @@ def main_processing_loop(
         lower_tracks = track_objects_in_image(lower_objects, lower_tracks, idx)
         
         # Match tracks between images
-        matched_tracks = match_tracks_between_images(upper_tracks, lower_tracks, window_size)
+        matched_tracks = match_tracks_between_images(upper_tracks, lower_tracks, window_size, trajectory_similarity)
         
         # Visualize results
         u_vis = cv2.cvtColor(u_crop, cv2.COLOR_GRAY2BGR)
@@ -511,12 +512,13 @@ def main_processing_loop(
 
 if __name__ == "__main__":
     main_processing_loop(
-        input_dir="/Users/vdausmann/oyster_project/images/20250312_21.2_01",
-        output_dir="/Users/vdausmann/oyster_project/result_images/20250312_21.2_01_new",
+        input_dir="/Users/vdausmann/oyster_project/images/20250328_24.4_14_01",
+        output_dir="/Users/vdausmann/oyster_project/result_images/20250328_24.4_14_01",
         stereo_calib_file="/Users/vdausmann/oyster_project/planktracker3D/calibration/stereo_calibration.npz",
         rectification_file="/Users/vdausmann/oyster_project/planktracker3D/calibration/stereo_rectification.npz",
         threshold=10,
         roi_file="/Users/vdausmann/oyster_project/planktracker3D/calibration/roi_coordinates.npz",
-        window_size=15,
+        window_size=15, #window in x direction for matching objects in stereo image pairs
+        trajectory_similarity=0.2, #minimum trajectory similarity for matching objects in stereo image pairs
         min_area=1
     )
