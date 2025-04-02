@@ -338,7 +338,7 @@ def main_processing_loop(
     
     # Load calibration parameters
 
-    rect_data = np.load(rectification_file)
+    rect_data = np.load(rectification_file, allow_pickle=True)
         
     map1_x, map1_y = rect_data['map1_x'], rect_data['map1_y']
     map2_x, map2_y = rect_data['map2_x'], rect_data['map2_y']
@@ -515,7 +515,7 @@ if __name__ == "__main__":
         input_dir="/Users/vdausmann/oyster_project/images/20250328_24.4_14_01",
         output_dir="/Users/vdausmann/oyster_project/result_images/20250328_24.4_14_01",
         stereo_calib_file="/Users/vdausmann/oyster_project/planktracker3D/calibration/stereo_calibration.npz",
-        rectification_file="/Users/vdausmann/oyster_project/planktracker3D/calibration/stereo_rectification.npz",
+        rectification_file="/Users/vdausmann/swimming_in_salt/calibration/stereo_rectification.npz",
         threshold=10,
         roi_file="/Users/vdausmann/oyster_project/planktracker3D/calibration/roi_coordinates.npz",
         window_size=15, #window in x direction for matching objects in stereo image pairs
