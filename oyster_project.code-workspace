@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../oyster_project"
+		},
+		{
+			"path": "."
+		},
+		{
+			"path": "../PISCO_Software_idof"
+		}
+	],
+	"settings": {}
+}
