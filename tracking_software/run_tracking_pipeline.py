@@ -15,20 +15,23 @@ sys.path.append(str(current_dir))
 from tracking_matching_objs import track_objects, save_tracks, save_tracking_report, visualize_tracks, visualize_tracks_with_colors
 from stereo_rectification import StereoRectifier
 
+base_dir = '../swimming_in_salt_data/images/'
+sample_name = '20250328_24.4_14_01'  # Example sample name
+
 # Configuration
 PIPELINE_CONFIG = {
     # Sample configuration
-    'sample_name': '20250404_24.4_24_01',  # This will create subdirectories in detection and tracking results
+    'sample_name': sample_name,  # This will create subdirectories in detection and tracking results
     
     # Detection configuration (controls the detection script)
     'detection_config': {
         # Input directories (should match the sample name)
-        'left_images': '../swimming_in_salt_data/images/20250404_24.4_24_01/lower/',
-        'right_images': '../swimming_in_salt_data/images/20250404_24.4_24_01/upper/',
-        
+        'left_images': os.path.join(base_dir, sample_name, "right/"),
+        'right_images': os.path.join(base_dir, sample_name, "left/"),
+
         # Calibration directory (where ROI info is stored)
-        'calibration_dir': './calibration_results',
-        
+        'calibration_dir': 'calibration_results',
+
         # Image parameters
         'image_pattern': '*.jpg',
         
@@ -56,7 +59,7 @@ PIPELINE_CONFIG = {
     },
     
     # Processing options
-    'run_detection': False,  # Set to True to run detection
+    'run_detection': True,  # Set to True to run detection
     'run_tracking': True,
     'create_visualizations': True,  # Enable tracking visualizations
     
@@ -81,12 +84,12 @@ PIPELINE_CONFIG = {
 }
 
 # Dynamically set directories based on sample name
-PIPELINE_CONFIG['detection_output'] = f'../swimming_in_salt_data/detection_results/{PIPELINE_CONFIG["sample_name"]}'
-PIPELINE_CONFIG['tracking_output'] = f'../swimming_in_salt_data/tracking_results/{PIPELINE_CONFIG["sample_name"]}'
+PIPELINE_CONFIG['detection_output'] = f'../swimming_in_salt_data/results/detection_results/{PIPELINE_CONFIG["sample_name"]}'
+PIPELINE_CONFIG['tracking_output'] = f'../swimming_in_salt_data/results/tracking_results/{PIPELINE_CONFIG["sample_name"]}'
 
 # Add sample name and output directory to detection config
 PIPELINE_CONFIG['detection_config']['sample_name'] = PIPELINE_CONFIG['sample_name']
-PIPELINE_CONFIG['detection_config']['output_dir_base'] = '../swimming_in_salt_data/detection_results'
+PIPELINE_CONFIG['detection_config']['output_dir_base'] = '../swimming_in_salt_data/results/detection_results'
 
 def configure_detection_module():
     """Configure the detection module with our pipeline settings"""

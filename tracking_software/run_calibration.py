@@ -22,7 +22,7 @@ CONFIG = {
     'right_images': '../swimming_in_salt_data/planktracker_2ndcalibration_August2025/small_water/upper/',
     
     # Output directory
-    'output_dir': './calibration_results',
+    'output_dir': 'calibration_results',
     
     # Calibration parameters
     'chess_rows': 8,

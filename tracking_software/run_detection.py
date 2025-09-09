@@ -10,17 +10,20 @@ from pathlib import Path
 from tqdm import tqdm
 from typing import Dict, List, Tuple
 
+base_dir = '../swimming_in_salt_data/images/'
+sample_name = '20250404_24.4_14_01'  # Example sample name
+
 # Configuration - Edit these variables as needed
 CONFIG = {
     # Sample configuration
-    'sample_name': '20250404_24.4_24_01',  # This will create a subdirectory in detection_results
+    'sample_name': sample_name,  # This will create a subdirectory in detection_results
     
     # Input directories (should match the sample name)
-    'left_images': '../swimming_in_salt_data/images/20250404_24.4_24_01/lower/',
-    'right_images': '../swimming_in_salt_data/images/20250404_24.4_24_01/upper/',
-    
+    'left_images': os.path.join(base_dir, sample_name, "right/"),
+    'right_images': os.path.join(base_dir, sample_name, "left/"),
+
     # Calibration directory (where ROI info is stored)
-    'calibration_dir': './calibration_results',
+    'calibration_dir': 'calibration_results',
     
     # Output directory (base - sample subdirectory will be created)
     'output_dir_base': '../swimming_in_salt_data/results/detection_results',

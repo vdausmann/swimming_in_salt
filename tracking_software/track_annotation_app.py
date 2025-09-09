@@ -105,7 +105,7 @@ class StereoCalibration:
     def load_calibration(self, calibration_path: str):
         """Load stereo calibration data from npz file - Updated for new structure"""
         try:
-            calib_data = np.load(calibration_path)
+            calib_data = np.load(calibration_path, allow_pickle=True)
             
             print(f"Available calibration keys: {list(calib_data.keys())}")
             
@@ -194,11 +194,11 @@ class TrackAnnotationTool:
     
     def load_stereo_calibration(self):
         """Load stereo calibration data - Updated paths"""
-        calibration_path = "./calibration_results/stereo_calibration.npz"
+        calibration_path = "calibration_results/stereo_calibration.npz"
         try:
             self.stereo_calib = StereoCalibration(calibration_path, baseline_mm=38.0)
         except Exception as e:
-            print(f"❌ Could not load stereo calibration: {e}")
+            print(f"❌ Could not load stereo calibration {calibration_path}: {e}")
             self.stereo_calib = None
     
     def load_data(self):

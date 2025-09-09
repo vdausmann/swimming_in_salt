@@ -1,82 +1,87 @@
+# create fresh environment with:
+# conda create --name cv python=3.8
+# then install dependencies with:
+# conda env update --file environment.yml 
+
 name: cv
 channels:
   - conda-forge
 dependencies:
-  - bzip2=1.0.8=h3422bc3_4
-  - c-ares=1.18.1=h3422bc3_0
-  - ca-certificates=2021.10.8=h4653dfc_0
-  - cairo=1.16.0=he69dfd1_1008
-  - cmake=3.23.0=he7c8c24_1
-  - expat=2.4.8=h6b3803e_0
-  - ffmpeg=4.3.2=h38cfed3_3
-  - fontconfig=2.13.96=hfb34624_2
-  - freetype=2.10.4=h17b34a0_1
-  - gettext=0.19.8.1=hea66d9f_1005
-  - gmp=6.2.1=h9f76cd9_0
-  - gnutls=3.6.13=h706517b_1
-  - graphite2=1.3.13=h9f76cd9_1001
-  - harfbuzz=2.9.1=h13b3495_1
-  - hdf5=1.10.6=nompi_h0fc092c_1114
-  - icu=68.2=hbdafb3b_0
-  - jasper=2.0.33=hba35424_0
-  - jbig=2.1=h3422bc3_2003
-  - jpeg=9e=h3422bc3_0
-  - krb5=1.19.3=hf9b2bbe_0
-  - lame=3.100=h27ca646_1001
-  - lerc=3.0=hbdafb3b_0
-  - libblas=3.9.0=13_osxarm64_openblas
-  - libcblas=3.9.0=13_osxarm64_openblas
-  - libcurl=7.82.0=hb0e6552_0
-  - libcxx=13.0.1=h6a5c8ee_0
-  - libdeflate=1.10=h3422bc3_0
-  - libedit=3.1.20191231=hc8eb9b7_2
-  - libev=4.33=h642e427_1
-  - libffi=3.3=h9f76cd9_2
-  - libgfortran=5.0.0.dev0=11_0_1_hf114ba7_23
-  - libgfortran5=11.0.1.dev0=hf114ba7_23
-  - libglib=2.68.4=h6c200e4_0
-  - libiconv=1.16=h642e427_0
-  - liblapack=3.9.0=13_osxarm64_openblas
-  - liblapacke=3.9.0=13_osxarm64_openblas
-  - libnghttp2=1.47.0=he723fca_0
-  - libopenblas=0.3.18=openmp_h5dd58f0_0
-  - libopencv=4.5.1=py38hc2fea30_0
-  - libpng=1.6.37=hf7e6567_2
-  - libprotobuf=3.19.4=hccf11d3_0
-  - libssh2=1.10.0=hb80f160_2
-  - libtiff=4.3.0=h77dc3b6_3
-  - libuv=1.43.0=h3422bc3_0
-  - libwebp-base=1.2.2=h3422bc3_1
-  - libzlib=1.2.11=h90dfc92_1014
-  - llvm-openmp=13.0.1=h455960f_1
-  - lz4-c=1.9.3=hbdafb3b_1
-  - ncurses=6.3=hc470f4d_0
-  - nettle=3.6=hc6a1b29_0
-  - numpy=1.22.3=py38hf29d37f_0
-  - onnxruntime=1.10.0=py38h46f6102_2
-  - opencv=4.5.1=py38h150bfb4_0
-  - openh264=2.1.1=habe5f53_0
-  - openssl=1.1.1n=h90dfc92_0
-  - pcre=8.45=hbdafb3b_0
-  - pip=22.0.4=pyhd8ed1ab_0
-  - pixman=0.40.0=h27ca646_0
-  - protobuf=3.19.4=py38h6f2b01f_0
-  - py-opencv=4.5.1=py38hab544c7_0
-  - python=3.8.6=h12cc5a1_5_cpython
-  - python-flatbuffers=2.0=pyhd8ed1ab_0
-  - python_abi=3.8=2_cp38
-  - re2=2021.11.01=hbdafb3b_0
-  - readline=8.1=hedafd6a_0
-  - rhash=1.4.1=h3422bc3_0
-  - setuptools=61.2.0=py38h10201cd_3
-  - six=1.16.0=pyh6c4a22f_0
-  - sqlite=3.37.1=h7e3ccbd_0
-  - tk=8.6.12=he1e0b03_0
-  - wheel=0.37.1=pyhd8ed1ab_0
-  - x264=1!161.3030=h3422bc3_1
-  - xz=5.2.5=h642e427_1
-  - zlib=1.2.11=h90dfc92_1014
-  - zstd=1.5.2=h861e0a7_0
+  - bzip2
+  - c-ares
+  - ca-certificates
+  - cairo
+  - cmake
+  - expat
+  - ffmpeg
+  - fontconfig
+  - freetype
+  - gettext
+  - gmp
+  - gnutls
+  - graphite2
+  - harfbuzz
+  - hdf5
+  - icu
+  - jasper
+  - jbig
+  - jpeg
+  - krb5
+  - lame
+  - lerc
+  - libblas
+  - libcblas
+  - libcurl
+  - libcxx
+  - libdeflate
+  - libedit
+  - libev
+  - libffi
+  - libgfortran
+  - libgfortran5
+  - libglib
+  - libiconv
+  - liblapack
+  - liblapacke
+  - libnghttp2
+  - libopenblas
+  - libopencv
+  - libpng
+  - libprotobuf
+  - libssh2
+  - libtiff
+  - libuv
+  - libwebp-base
+  - libzlib
+  - llvm-openmp
+  - lz4-c
+  - ncurses
+  - nettle
+  - numpy
+  - onnxruntime
+  - opencv=4.7.0
+  - openh264
+  - openssl
+  - pcre
+  - pip
+  - pixman
+  - protobuf
+  - py-opencv
+  - python
+  - python-flatbuffers
+  - python_abi
+  - re2
+  - readline
+  - rhash
+  - setuptools
+  - six
+  - sqlite
+  - tk
+  - wheel
+  - x264
+  - xz
+  - zlib
+  - zstd
   - pip:
     - blinker==1.8.2
     - cairocffi==1.7.1
@@ -111,7 +116,7 @@ dependencies:
     - networkx==3.1
     - numpy-quaternion==2023.0.4
     - oauthlib==3.2.0
-    - opencv-python==4.5.5.64
+    #- opencv-python==4.5.5.64
     - packaging==21.3
     - pandas==2.0.3
     - pillow==9.0.1
@@ -129,14 +134,14 @@ dependencies:
     - retrying==1.4.1
     - rsa==4.8
     - scikit-image==0.21.0
-    - scipy==1.8.0
+    - scipy #==1.9.0
     - seaborn==0.13.2
     - svglib==1.5.1
     - tensorboard-data-server==0.6.1
     - tensorboard-plugin-wit==1.8.1
     - tifffile==2023.7.10
     - tinycss2==1.4.0
-    - torch==1.11.0
+    #- torch==1.11.0
     - tqdm==4.63.1
     - trimesh==4.8.1
     - typing-extensions==4.13.2
