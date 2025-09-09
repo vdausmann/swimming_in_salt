@@ -1,5 +1,4 @@
-opencv-python
-numpy
-picamera2
-PyQt5
-datetime
+opencv-python>=4.5.0
+numpy>=1.20.0
+picamera2>=0.3.0  # Raspberry Pi only
+PyQt5>=5.15.0

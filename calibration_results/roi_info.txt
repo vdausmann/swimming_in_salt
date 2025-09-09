@@ -1,0 +1,14 @@
+ROI INFORMATION
+========================================
+
+Left camera (lower) ROI:
+  Top-left: (561, 158)
+  Bottom-right: (1806, 1130)
+  Size: 1245 x 972 pixels
+
+Right camera (upper) ROI:
+  Top-left: (121, 209)
+  Bottom-right: (1166, 1206)
+  Size: 1045 x 997 pixels
+
+Margin applied: 10 pixels

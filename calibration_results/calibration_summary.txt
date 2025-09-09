@@ -1,0 +1,33 @@
+================================================================================
+COMPREHENSIVE CALIBRATION SUMMARY
+================================================================================
+
+CONFIGURATION:
+----------------------------------------
+Left camera:     lower
+Right camera:    upper
+Chessboard:      8x11
+Square size:     1.5 mm
+ROI used:        True
+Image size:      [1245  972]
+
+SINGLE CAMERA CALIBRATION RESULTS:
+----------------------------------------
+Left camera RMS error:   0.6988 pixels
+Right camera RMS error:  0.2509 pixels
+Left mean reproj error:  0.0400 pixels
+Right mean reproj error: 0.0255 pixels
+
+STEREO CALIBRATION RESULTS:
+----------------------------------------
+Stereo RMS error:        0.4320 pixels
+Baseline:                39.84 mm
+Valid stereo pairs:      30
+
+QUALITY ASSESSMENT:
+----------------------------------------
+Overall Quality: ★★☆ GOOD
+
+Recommendation: Calibration is ready for production use.
+
+================================================================================

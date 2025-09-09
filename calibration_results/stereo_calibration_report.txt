@@ -1,0 +1,47 @@
+============================================================
+STEREO CAMERA CALIBRATION REPORT
+============================================================
+
+CALIBRATION PARAMETERS:
+------------------------------
+Left images directory: ./calibration_results/cropped_left
+Right images directory: ./calibration_results/cropped_right
+Chessboard size: 8 x 11
+Square size: 1.5 mm
+Valid image pairs used: 30
+
+STEREO CALIBRATION RESULTS:
+------------------------------
+RMS stereo calibration error: 0.4320 pixels
+Baseline (camera separation): 39.84 mm
+
+ROTATION MATRIX (R):
+[[ 0.98916065 -0.00804217  0.14661695]
+ [ 0.00674579  0.99993366  0.009337  ]
+ [-0.14668231 -0.00824674  0.98914928]]
+
+TRANSLATION VECTOR (T):
+[-39.83690173   0.44603844   0.37100752]
+
+LEFT CAMERA MATRIX:
+[[2.85378880e+03 0.00000000e+00 5.77108323e+02]
+ [0.00000000e+00 2.85388913e+03 6.22745062e+02]
+ [0.00000000e+00 0.00000000e+00 1.00000000e+00]]
+
+RIGHT CAMERA MATRIX:
+[[2.75702518e+03 0.00000000e+00 6.41854111e+02]
+ [0.00000000e+00 2.78239886e+03 5.99953822e+02]
+ [0.00000000e+00 0.00000000e+00 1.00000000e+00]]
+
+CAMERA PARAMETERS:
+------------------------------
+Left focal length:  fx=2853.79, fy=2853.89
+Left principal point: (577.1, 622.7)
+Right focal length: fx=2757.03, fy=2782.40
+Right principal point: (641.9, 600.0)
+
+QUALITY ASSESSMENT:
+------------------------------
+★ EXCELLENT: Stereo error < 1.0 pixels
+
+============================================================

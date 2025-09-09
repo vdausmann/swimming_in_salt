@@ -1,0 +1,41 @@
+============================================================
+LOWER CAMERA CALIBRATION REPORT
+============================================================
+
+CALIBRATION PARAMETERS:
+------------------------------
+Image directory: ./calibration_results/cropped_left
+Camera name: lower
+Chessboard size: 8 x 11
+Square size: 1.5 mm
+Valid images used: 32
+
+CALIBRATION RESULTS:
+------------------------------
+RMS calibration error: 0.6988 pixels
+Mean reprojection error: 0.0400 pixels
+
+CAMERA MATRIX:
+[[2.85378880e+03 0.00000000e+00 5.77108323e+02]
+ [0.00000000e+00 2.85388913e+03 6.22745062e+02]
+ [0.00000000e+00 0.00000000e+00 1.00000000e+00]]
+
+DISTORTION COEFFICIENTS:
+k1: -0.838138
+k2: 0.165512
+p1: -0.007710
+p2: -0.038650
+k3: 12.194468
+
+CAMERA PARAMETERS:
+------------------------------
+Focal length X: 2853.79 pixels
+Focal length Y: 2853.89 pixels
+Principal point: (577.1, 622.7)
+Aspect ratio: 1.0000
+
+QUALITY ASSESSMENT:
+------------------------------
+★ EXCELLENT: Reprojection error < 0.5 pixels
+
+============================================================

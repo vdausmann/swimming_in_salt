@@ -1,0 +1,41 @@
+============================================================
+UPPER CAMERA CALIBRATION REPORT
+============================================================
+
+CALIBRATION PARAMETERS:
+------------------------------
+Image directory: ./calibration_results/cropped_right
+Camera name: upper
+Chessboard size: 8 x 11
+Square size: 1.5 mm
+Valid images used: 58
+
+CALIBRATION RESULTS:
+------------------------------
+RMS calibration error: 0.2509 pixels
+Mean reprojection error: 0.0255 pixels
+
+CAMERA MATRIX:
+[[2.75702518e+03 0.00000000e+00 6.41854111e+02]
+ [0.00000000e+00 2.78239886e+03 5.99953822e+02]
+ [0.00000000e+00 0.00000000e+00 1.00000000e+00]]
+
+DISTORTION COEFFICIENTS:
+k1: -0.877563
+k2: 2.006824
+p1: -0.001396
+p2: 0.038750
+k3: -10.565742
+
+CAMERA PARAMETERS:
+------------------------------
+Focal length X: 2757.03 pixels
+Focal length Y: 2782.40 pixels
+Principal point: (641.9, 600.0)
+Aspect ratio: 0.9909
+
+QUALITY ASSESSMENT:
+------------------------------
+★ EXCELLENT: Reprojection error < 0.5 pixels
+
+============================================================

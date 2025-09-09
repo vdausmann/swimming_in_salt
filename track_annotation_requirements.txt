@@ -1,7 +1,0 @@
-# Track Annotation App Requirements
-dash>=2.14.0
-plotly>=5.15.0
-pandas>=1.5.0
-numpy>=1.21.0
-pillow>=9.0.0
-opencv-python>=4.7.0
