@@ -599,8 +599,57 @@ def run_complete_pipeline():
     
     return True
 
+import argparse
+
+def get_sample_dirs(base_dir):
+    # List all directories in base_dir that contain metadata json (indicating a sample)
+    sample_dirs = []
+    for entry in os.listdir(base_dir):
+        full_path = os.path.join(base_dir, entry)
+        if os.path.isdir(full_path):
+            metadata_path = os.path.join(full_path, f"{entry}_metadata.json")
+            if os.path.exists(metadata_path):
+                sample_dirs.append(entry)
+    return sample_dirs
+
+def main():
+    parser = argparse.ArgumentParser(description="Run detection and tracking pipeline for plankton samples.")
+    parser.add_argument('--base-dir', type=str, default='../F4/', help='Base directory containing sample folders')
+    parser.add_argument('--sample-name', type=str, help='Name of the sample to process')
+    parser.add_argument('--all-samples', action='store_true', help='Process all samples in base_dir')
+    args = parser.parse_args()
+
+    base_dir = args.base_dir
+    if args.all_samples:
+        sample_names = get_sample_dirs(base_dir)
+        if not sample_names:
+            print(f"No valid samples found in {base_dir}")
+            sys.exit(1)
+        print(f"Found {len(sample_names)} samples in {base_dir}: {sample_names}")
+        for sample_name in sample_names:
+            print(f"\n=== Processing sample: {sample_name} ===")
+            # Update config for this sample
+            PIPELINE_CONFIG['sample_name'] = sample_name
+            PIPELINE_CONFIG['detection_config']['left_images'] = os.path.join(base_dir, sample_name, "right/")
+            PIPELINE_CONFIG['detection_config']['right_images'] = os.path.join(base_dir, sample_name, "left/")
+            PIPELINE_CONFIG['detection_output'] = f'../swimming_in_salt_data/results/detection_results/{sample_name}'
+            PIPELINE_CONFIG['tracking_output'] = f'../swimming_in_salt_data/results/tracking_results/{sample_name}'
+            PIPELINE_CONFIG['detection_config']['sample_name'] = sample_name
+            success = run_complete_pipeline()
+            if not success:
+                print(f"\n❌ Pipeline failed for sample {sample_name}!")
+    else:
+        sample_name = args.sample_name if args.sample_name else sample_name
+        PIPELINE_CONFIG['sample_name'] = sample_name
+        PIPELINE_CONFIG['detection_config']['left_images'] = os.path.join(base_dir, sample_name, "right/")
+        PIPELINE_CONFIG['detection_config']['right_images'] = os.path.join(base_dir, sample_name, "left/")
+        PIPELINE_CONFIG['detection_output'] = f'../swimming_in_salt_data/results/detection_results/{sample_name}'
+        PIPELINE_CONFIG['tracking_output'] = f'../swimming_in_salt_data/results/tracking_results/{sample_name}'
+        PIPELINE_CONFIG['detection_config']['sample_name'] = sample_name
+        success = run_complete_pipeline()
+        if not success:
+            print("\n❌ Pipeline failed!")
+            sys.exit(1)
+
 if __name__ == "__main__":
-    success = run_complete_pipeline()
-    if not success:
-        print("\n❌ Pipeline failed!")
-        sys.exit(1)
+    main()
