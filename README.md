@@ -44,7 +44,7 @@ Detects and tracks objects in the recorded stereo images.
 
 Usage: 
 e.g. for all samples at a given base directory: 
-<python run_tracking_pipeline.py --all-samples --base-dir /path/to/images/>
+```python run_tracking_pipeline.py --all-samples --base-dir /path/to/images/```
 
 
 How it works:
@@ -82,12 +82,16 @@ The Swimming in Salt software guides users from camera calibration to object tra
 
 2. create conda environment and install dependencies:
    
-   <conda create --name oyster python=3.8>
-   <conda activate oyster>
+   ```
+   conda create --name oyster python=3.8
+   conda activate oyster
+   ```
 
    then install dependencies with:
-   <conda env update --file environment.yml> 
    ```
+   conda env update --file environment.yml
+   ``` 
+  
    
 ## Usage
 **RASPI:**
@@ -134,19 +138,19 @@ CONFIG = {
 ```
 run the calibration, results will be saved in the calibration_results folder 
 **TODO: CAREFULL, this will overwrite the current calibration, need to change that new versions of calib can be saved and later selected from.** 
-<python run_calibration.py>
+```python run_calibration.py```
 
 1. Run detection and trackiing per sample.
 
 Some general configs can be changed in the script run_tracking_pipeline.py.
 
 To run the whole pipeline on a folder containing several samples:
-<python run_tracking_pipeline.py --all-samples --base-dir /path/to/images/>
+```python run_tracking_pipeline.py --all-samples --base-dir /path/to/images/```
 
 2. Annotate tracks, create stereo matches manually.
 
 - start the annotation app:
-<python track_annotation_app.py>
+```python track_annotation_app.py```
 
 - connect to http://localhost:8050/ in the browser.
 
