@@ -1,4 +1,3 @@
-#!/Users/vdausmann/miniforge3/envs/cv/bin/python
 """
 Track Annotation and Validation Tool
 
@@ -94,6 +93,80 @@ def get_available_data_directories(base_dir: str) -> List[Dict]:
     # Sort by directory name, prioritizing rectified (based on label content)
     data_dirs.sort(key=lambda x: (not '[RECTIFIED]' in x['label'], x['label']))
     return data_dirs
+
+# Define a fixed color list at the module level
+DISPLAY_ID_COLORS = [
+    (255, 0, 0), (0, 255, 0), (0, 0, 255),
+    (255, 255, 0), (255, 0, 255), (0, 255, 255),
+    (128, 128, 128), (255, 128, 0), (128, 0, 255),
+    (0, 128, 255), (128, 255, 0), (255, 0, 128),
+    (128, 0, 0), (0, 128, 0), (0, 0, 128),
+    (128, 128, 0), (128, 0, 128), (0, 128, 128)
+]
+
+def get_display_id_color(display_id):
+    # Always assign the same color for the same display_id
+    return DISPLAY_ID_COLORS[display_id % len(DISPLAY_ID_COLORS)]
+
+def visualize_tracks_simple(tracks_df, frame_idx, canvas_size=(720, 676), selected_display_ids=None, show_epipolar_lines=True):
+    """
+    Visualize only the selected tracks for a single frame, drawing their trajectories and current positions.
+    Epipolar lines and canvas offset are calculated exactly as in visualize_tracks from tracking_matching_objs.py.
+    Only display tracks that have been active in the last 10 frames (including current).
+    """
+    # Calculate offset and padding using ALL tracks (not just selected)
+    padding = 50
+    all_x = tracks_df['x'].values
+    all_y = tracks_df['y'].values
+    if len(all_x) > 0 and len(all_y) > 0:
+        min_x, max_x = int(np.min(all_x)), int(np.max(all_x))
+        min_y, max_y = int(np.min(all_y)), int(np.max(all_y))
+        offset_x = padding - min_x
+        offset_y = padding - min_y
+    else:
+        offset_x = offset_y = padding
+
+    img = np.zeros((canvas_size[1], canvas_size[0], 3), dtype=np.uint8)
+
+    # Draw epipolar lines (horizontal) with same spacing as visualize_tracks
+    if show_epipolar_lines:
+        line_spacing = 50
+        line_color = (128, 128, 128)
+        line_thickness = 1
+        for y in range(0, canvas_size[1], line_spacing):
+            cv2.line(img, (0, y), (canvas_size[0], y), line_color, line_thickness)
+
+    # Filter for selected tracks only
+    if selected_display_ids is not None:
+        tracks_up_to_frame = tracks_df[
+            (tracks_df['frame'] <= frame_idx) &
+            (tracks_df['display_track_id'].isin(selected_display_ids))
+        ]
+        display_ids = selected_display_ids
+    else:
+        tracks_up_to_frame = tracks_df[tracks_df['frame'] <= frame_idx]
+        display_ids = tracks_up_to_frame['display_track_id'].unique()
+
+    # Filter out tracks not active in the last 10 frames (including current)
+    active_window = range(max(0, frame_idx - 9), frame_idx + 1)
+    active_tracks = set(tracks_df[tracks_df['frame'].isin(active_window)]['display_track_id'].unique())
+    display_ids = [did for did in display_ids if did in active_tracks]
+
+    color_map = {did: get_display_id_color(did) for did in display_ids}
+
+    for did in display_ids:
+        track_points = tracks_up_to_frame[tracks_up_to_frame['display_track_id'] == did].sort_values('frame')
+        pts = [(int(row['x'] + offset_x), int(row['y'] + offset_y)) for _, row in track_points.iterrows()]
+        color = color_map[did]
+        for i in range(1, len(pts)):
+            cv2.line(img, pts[i-1], pts[i], color, 2)
+        current = tracks_df[(tracks_df['frame'] == frame_idx) & (tracks_df['display_track_id'] == did)]
+        if len(current) > 0:
+            x, y = int(current.iloc[0]['x'] + offset_x), int(current.iloc[0]['y'] + offset_y)
+            cv2.circle(img, (x, y), 10, color, -1)
+            cv2.putText(img, str(did), (x+12, y-12), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+    cv2.putText(img, f"Frame: {frame_idx}", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255,255,255), 2)
+    return img
 
 class StereoCalibration:
     """Handle stereo calibration and 3D reconstruction - Updated for rectified coordinates"""
@@ -332,110 +405,182 @@ class TrackAnnotationTool:
                 self.lower_tracks.to_csv(csv_path, index=False)
         
         print(f"💾 Saved {camera} tracks ({self.coordinate_system}) to {csv_path}")
+    
+    
 
     def generate_frame_image(self, frame_idx: int, camera: str, selected_track: Optional[List[int]] = None) -> Optional[str]:
-        """Generate a single frame image using the visualize_tracks function with fixed canvas size"""
+        """Generate a single frame image using a simple trajectory visualizer with display_track_id"""
         try:
             # Validate frame_idx
             if frame_idx is None:
                 print(f"❌ Error: frame_idx is None")
                 return None
-                
+
             print(f"DEBUG: Generating frame {frame_idx} for {camera}")
-            
-            # Get the appropriate data
+
             if camera == "upper":
-                track_objects = self.upper_track_objects
                 tracks_df = self.upper_tracks
-                canvas_size = (720, 676)  # Fixed size for upper camera
+                canvas_size = (720, 676)
                 image_files = self.upper_images
             else:
-                track_objects = self.lower_track_objects
                 tracks_df = self.lower_tracks
-                canvas_size = (827, 676)  # Fixed size for lower camera
+                canvas_size = (827, 676)
                 image_files = self.lower_images
 
             # Check if we have a pre-generated visualization image
-            if frame_idx < len(image_files) and selected_track is None:
-                # Use existing visualization image as base
-                img_path = image_files[frame_idx]
-                img = cv2.imread(str(img_path))
-                if img is not None:
-                    # Use the pre-generated image
-                    # temp_path = self.temp_dir / f"{camera}_frame_{frame_idx}_track_{selected_track or 'all'}_{self.coordinate_system}.png"
-                    # cv2.imwrite(str(temp_path), img)
-                    return str(img_path)
-            
-            # No pre-generated image available            
-            # Determine which tracks to show
-            tracks_to_visualize = track_objects
-            # if selected_track is not None:
-                # Find the track object index that corresponds to the selected display track ID
-            #     selected_track_objects = []
-            #     for tid, track in enumerate(track_objects):
-            #         # Check if this track object contains the selected track ID
-            #         track_data = tracks_df[tracks_df['display_track_id'] == selected_track]
-            #         if len(track_data) > 0:
-            #             # Match by comparing track data
-            #             track_frames = set(track.frame_indices)
-            #             data_frames = set(track_data['frame'].tolist())
-            #             if track_frames == data_frames:
-            #                 selected_track_objects.append(track)
-            #                 break
-            
-            #     tracks_to_visualize = selected_track_objects
-            #     print(f"Visualizing selected track {selected_track} for {camera} at frame {frame_idx}")
-        
-            # # Check if we have any tracks to show
-            # if not tracks_to_visualize:
-            #     print(f"⚠️ No tracks to visualize for {camera} frame {frame_idx}")
-            #     return self._create_empty_frame_image(frame_idx, camera, canvas_size)
-            
-            # Create output directory for this specific frame
+            # if frame_idx < len(image_files) and selected_track is None:
+            #     img_path = image_files[frame_idx]
+            #     img = cv2.imread(str(img_path))
+            #     if img is not None:
+            #         return str(img_path)
+
+            # No pre-generated image available: use simple visualizer
             temp_output_dir = self.temp_dir / f"{camera}_frames"
             temp_output_dir.mkdir(exist_ok=True)
-            
-            # Use the visualize_tracks function with single frame and fixed canvas size
-            try:
-                visualize_tracks(
-                    tracks= track_objects,
-                    image_dir="",  # Not used for black background
-                    prefix=f"{camera}_{self.coordinate_system}",
-                    output_dir=str(temp_output_dir),
-                    debug_frames=[frame_idx],  # Only this frame
-                    target_tracks=selected_track,  
-                    track_fade_frames=0,  # Show recently active tracks
-                    show_trajectory_length=None,  # Limit trajectory length for clarity
-                    show_legend=False,  # Show frame information
-                    show_epipolar_lines=True,  # Disable for now
-                    show_area=False,  # Show object areas
-                    # fixed_canvas_size=canvas_size  # Use fixed canvas size
-                )
-            except Exception as e:
-                print(f"⚠️ Error in visualize_tracks: {e}")
-                return self._create_empty_frame_image(frame_idx, camera, canvas_size)
-            
-            # Find the generated image
-            expected_filename = f"{camera}_{self.coordinate_system}_tracking_frame_{frame_idx:03d}.png"
-            generated_path = temp_output_dir / expected_filename
-            
-            if generated_path.exists():
-                return str(generated_path)
-            else:
-                # Look for any matching file
-                pattern = f"*frame_{frame_idx:03d}.png"
-                matching_files = list(temp_output_dir.glob(pattern))
-                if matching_files:
-                    return str(matching_files[0])
-                else:
-                    print(f"❌ Generated image not found, creating fallback")
-                    return self._create_empty_frame_image(frame_idx, camera, canvas_size)
-                    
+
+            # Use selected_track as highlight
+            img = visualize_tracks_simple(
+                tracks_df,
+                frame_idx,
+                canvas_size=canvas_size,
+                selected_display_ids=selected_track
+            )
+
+            # Save image
+            out_path = temp_output_dir / f"{camera}_{self.coordinate_system}_tracking_frame_{frame_idx:03d}.png"
+            cv2.imwrite(str(out_path), img)
+            return str(out_path)
+
         except Exception as e:
             print(f"❌ Error generating frame image: {e}")
             import traceback
             traceback.print_exc()
             return self._create_empty_frame_image(frame_idx, camera, canvas_size)
+    # def generate_frame_image(self, frame_idx: int, camera: str, selected_track: Optional[List[int]] = None) -> Optional[str]:
+    #     """Generate a single frame image using the visualize_tracks function with fixed canvas size"""
+    #     try:
+    #         # Validate frame_idx
+    #         if frame_idx is None:
+    #             print(f"❌ Error: frame_idx is None")
+    #             return None
+                
+    #         print(f"DEBUG: Generating frame {frame_idx} for {camera}")
+            
+    #         if camera == "upper":
+    #             tracks_df = self.upper_tracks
+    #             canvas_size = (720, 676)
+    #             image_files = self.upper_images
+    #         else:
+    #             tracks_df = self.lower_tracks
+    #             canvas_size = (827, 676)
+    #             image_files = self.lower_images
+
+    #         # Filter tracks for the current frame
+    #         frame_tracks_df = tracks_df[tracks_df['frame'] == frame_idx]
+    #         # if selected_track is not None:
+    #         #     frame_tracks_df = frame_tracks_df[frame_tracks_df['display_track_id'].isin(selected_track)]
+
+    #         # print(f"DEBUG: Found {len(frame_tracks_df)} tracks for {camera} at frame {frame_idx}")
+    #         # Convert only these tracks to SingleTrack objects
+    #         track_objects = self._convert_to_track_objects(frame_tracks_df)
+
+    #         # Map selected_track (display_track_id) to indices in track_objects
+    #         target_indices = None
+    #         if selected_track is not None:
+    #             target_indices = []
+    #             for idx, track in enumerate(track_objects):
+    #                 # track.track_id is the original track_id, but display_track_id may differ
+    #                 # Find the display_track_id for this track in this frame
+    #                 matching_rows = frame_tracks_df[frame_tracks_df['track_id'] == track.track_id]
+    #                 if len(matching_rows) > 0:
+    #                     display_id = matching_rows.iloc[0]['display_track_id']
+    #                     if display_id in selected_track:
+    #                         target_indices.append(idx)
+    #             # If no match, fallback to all tracks
+    #             if not target_indices:
+    #                 target_indices = None
+
+    #         # Check if we have a pre-generated visualization image
+    #         if frame_idx < len(image_files) and selected_track is None:
+    #             # Use existing visualization image as base
+    #             img_path = image_files[frame_idx]
+    #             img = cv2.imread(str(img_path))
+    #             if img is not None:
+    #                 # Use the pre-generated image
+    #                 # temp_path = self.temp_dir / f"{camera}_frame_{frame_idx}_track_{selected_track or 'all'}_{self.coordinate_system}.png"
+    #                 # cv2.imwrite(str(temp_path), img)
+    #                 return str(img_path)
+            
+    #         # No pre-generated image available            
+    #         # Determine which tracks to show
+    #         # tracks_to_visualize = track_objects
+    #         # if selected_track is not None:
+    #             # Find the track object index that corresponds to the selected display track ID
+    #         #     selected_track_objects = []
+    #         #     for tid, track in enumerate(track_objects):
+    #         #         # Check if this track object contains the selected track ID
+    #         #         track_data = tracks_df[tracks_df['display_track_id'] == selected_track]
+    #         #         if len(track_data) > 0:
+    #         #             # Match by comparing track data
+    #         #             track_frames = set(track.frame_indices)
+    #         #             data_frames = set(track_data['frame'].tolist())
+    #         #             if track_frames == data_frames:
+    #         #                 selected_track_objects.append(track)
+    #         #                 break
+            
+    #         #     tracks_to_visualize = selected_track_objects
+    #         #     print(f"Visualizing selected track {selected_track} for {camera} at frame {frame_idx}")
+        
+    #         # # Check if we have any tracks to show
+    #         # if not tracks_to_visualize:
+    #         #     print(f"⚠️ No tracks to visualize for {camera} frame {frame_idx}")
+    #         #     return self._create_empty_frame_image(frame_idx, camera, canvas_size)
+            
+    #         # Create output directory for this specific frame
+    #         temp_output_dir = self.temp_dir / f"{camera}_frames"
+    #         temp_output_dir.mkdir(exist_ok=True)
+            
+    #         # Use the visualize_tracks function with single frame and fixed canvas size
+    #         try:
+    #             visualize_tracks(
+    #                 tracks= track_objects,
+    #                 image_dir="",  # Not used for black background
+    #                 prefix=f"{camera}_{self.coordinate_system}",
+    #                 output_dir=str(temp_output_dir),
+    #                 debug_frames=[frame_idx],  # Only this frame
+    #                 target_tracks=target_indices,
+    #                 track_fade_frames=0,  # Show recently active tracks
+    #                 show_trajectory_length=None,  # Limit trajectory length for clarity
+    #                 show_legend=False,  # Show frame information
+    #                 show_epipolar_lines=True,  # Disable for now
+    #                 show_area=False,  # Show object areas
+    #                 # fixed_canvas_size=canvas_size  # Use fixed canvas size
+    #             )
+    #         except Exception as e:
+    #             print(f"⚠️ Error in visualize_tracks: {e}")
+    #             return self._create_empty_frame_image(frame_idx, camera, canvas_size)
+            
+    #         # Find the generated image
+    #         expected_filename = f"{camera}_{self.coordinate_system}_tracking_frame_{frame_idx:03d}.png"
+    #         generated_path = temp_output_dir / expected_filename
+            
+    #         if generated_path.exists():
+    #             return str(generated_path)
+    #         else:
+    #             # Look for any matching file
+    #             pattern = f"*frame_{frame_idx:03d}.png"
+    #             matching_files = list(temp_output_dir.glob(pattern))
+    #             if matching_files:
+    #                 return str(matching_files[0])
+    #             else:
+    #                 print(f"❌ Generated image not found, creating fallback")
+    #                 return self._create_empty_frame_image(frame_idx, camera, canvas_size)
+                    
+    #     except Exception as e:
+    #         print(f"❌ Error generating frame image: {e}")
+    #         import traceback
+    #         traceback.print_exc()
+    #         return self._create_empty_frame_image(frame_idx, camera, canvas_size)
 
     def _create_empty_frame_image(self, frame_idx: int, camera: str, canvas_size: Tuple[int, int]) -> str:
         """Create a simple black frame with just frame information using fixed canvas size"""
@@ -463,17 +608,6 @@ class TrackAnnotationTool:
         except Exception as e:
             print(f"❌ Error creating empty frame: {e}")
             return None
-
-    def _add_display_track_id_column(self, tracks_df: pd.DataFrame, camera: str) -> pd.DataFrame:
-        """Add display_track_id column if it doesn't exist"""
-        if 'display_track_id' not in tracks_df.columns:
-            # Initialize display_track_id with original track_id
-            tracks_df['display_track_id'] = tracks_df['track_id'].copy()
-            print(f"✅ Added display_track_id column to {camera} tracks")
-        else:
-            print(f"✅ display_track_id column already exists in {camera} tracks")
-        
-        return tracks_df
 
     def _convert_to_track_objects(self, tracks_df: pd.DataFrame) -> List[SingleTrack]:
         """Convert track DataFrame to SingleTrack objects for visualization"""
@@ -853,19 +987,26 @@ class TrackAnnotationTool:
                 new_matches_df = pd.DataFrame(new_matches)
                 self.stereo_matches = pd.concat([self.stereo_matches, new_matches_df], ignore_index=True)
                 
-                # Save to file
+                # SAVE stereo_matches.csv as well
                 stereo_matches_file = self.data_dir / "stereo_matches.csv"
                 self.stereo_matches.to_csv(stereo_matches_file, index=False)
+                
+                # Save the two new CSVs:
+                frame_csv = self.data_dir / "frame_level_3d_stats.csv"
+                track_csv = self.data_dir / "track_level_3d_stats.csv"
+                self.export_frame_level_3d_statistics(str(frame_csv))
+                self.export_track_level_3d_statistics(str(track_csv))
                 
                 print(f"✅ Created detailed stereo match: Upper {upper_track} ↔ Lower {lower_track}")
                 print(f"   {len(new_matches)} entries created for {len(common_frames)} frames")
                 print(f"   Frame range: {min(common_frames)} - {max(common_frames)}")
                 print(f"   Frame timestamps: {new_matches_df['frame_timestamp'].iloc[0]} to {new_matches_df['frame_timestamp'].iloc[-2]}")
+                print(f"   Exported frame-level stats to {frame_csv}")
+                print(f"   Exported track-level stats to {track_csv}")
                 return True
             else:
                 print(f"❌ No valid frame data found for creating matches")
                 return False
-                
         except Exception as e:
             print(f"❌ Error creating stereo match: {e}")
             import traceback
@@ -921,13 +1062,12 @@ class TrackAnnotationTool:
                 return {"error": "No matching points found"}
             
             # Triangulate 3D points
-            upper_points = np.array(upper_points)
-            lower_points = np.array(lower_points)
+            upper_points_np = np.array(upper_points)
+            lower_points_np = np.array(lower_points)
+            points_3d = self.stereo_calib.triangulate_points(upper_points_np, lower_points_np)
             
-            points_3d = self.stereo_calib.triangulate_points(upper_points, lower_points)
-            
-            # Calculate enhanced statistics using frame timestamps
-            statistics = self._calculate_3d_statistics(points_3d, frames, frame_timestamps)
+            # Calculate enhanced statistics using frame timestamps and 2D points for reprojection error
+            statistics = self._calculate_3d_statistics(points_3d, frames, frame_timestamps, upper_points_np, lower_points_np)
             
             return {
                 "points_3d": points_3d,
@@ -939,72 +1079,92 @@ class TrackAnnotationTool:
                 "match_method": "detailed_frame_by_frame",
                 "statistics": statistics
             }
-            
         except Exception as e:
             return {"error": str(e)}
-    
-    def _calculate_3d_statistics(self, points_3d: np.ndarray, frames: List[int], frame_timestamps: List[str]) -> Dict:
-        """Calculate detailed 3D trajectory statistics using frame timestamps"""
+
+    def _calculate_3d_statistics(self, points_3d: np.ndarray, frames: List[int], frame_timestamps: List[str], upper_points: np.ndarray, lower_points: np.ndarray) -> Dict:
+        """Calculate detailed 3D trajectory statistics using frame timestamps and reprojection error"""
         try:
             if len(points_3d) < 2:
                 return {"error": "Need at least 2 points for statistics"}
             
-            # Convert frame timestamps to seconds
+            # Convert frame timestamps to seconds (existing code)
             time_seconds = []
             for i, timestamp_str in enumerate(frame_timestamps):
                 try:
-                    # Try to parse different timestamp formats
                     if 'time_' in timestamp_str and 's' in timestamp_str:
-                        # Format: frame_000123_time_4.100s
                         time_part = timestamp_str.split('time_')[1].replace('s', '')
                         time_seconds.append(float(time_part))
                     elif 'T' in timestamp_str:
-                        # ISO format: 2023-04-04T15:30:45.123
                         from datetime import datetime
                         dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-                        # Use time relative to first frame
                         if i == 0:
                             base_time = dt
                             time_seconds.append(0.0)
                         else:
                             time_diff = (dt - base_time).total_seconds()
                             time_seconds.append(time_diff)
+                    elif re.match(r'\d{8}_\d{6}_\d{6}', timestamp_str):
+                        from datetime import datetime
+                        dt = datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S_%f")
+                        time_seconds.append(dt.timestamp())
                     else:
-                        # Fallback: assume 30 fps
-                        frame_num = frames[i]
-                        time_seconds.append(frame_num / 30.0)
+                        print(f"Unrecognized timestamp format: {timestamp_str}")
+                        return {"error": f"Unrecognized timestamp format: {timestamp_str}"}
                 except Exception as e:
                     print(f"Error parsing timestamp {timestamp_str}: {e}")
-                    # Fallback to frame-based timing
-                    frame_num = frames[i]
-                    time_seconds.append(frame_num / 30.0)
+                    return {"error": f"Error parsing timestamp {timestamp_str}: {e}"}
             
             time_seconds = np.array(time_seconds)
+            if len(time_seconds) < 2:
+                return {"error": "Not enough valid timestamps for statistics"}
             
             # Calculate distances between consecutive points
             distances = np.linalg.norm(np.diff(points_3d, axis=0), axis=1)
             time_intervals = np.diff(time_seconds)
-            
-            # Filter out zero or negative time intervals
             valid_intervals = time_intervals > 0
             valid_distances = distances[valid_intervals]
             valid_time_intervals = time_intervals[valid_intervals]
-            
             if len(valid_distances) == 0:
                 return {"error": "No valid time intervals for speed calculation"}
             
-            # Calculate speeds
             speeds = valid_distances / valid_time_intervals  # mm/s
-            
-            # Calculate velocity components
             velocity_components = np.diff(points_3d, axis=0) / valid_time_intervals.reshape(-1, 1)
             avg_velocity_xyz = np.mean(velocity_components, axis=0)
-            
+
+            # --- Reprojection error calculation ---
+            reproj_errors_upper = []
+            reproj_errors_lower = []
+            if upper_points is not None and lower_points is not None and self.stereo_calib is not None:
+                # Project 3D points back to both cameras
+                for i in range(len(points_3d)):
+                    pt_3d = points_3d[i].reshape(1, 3)
+                    # Project to upper camera
+                    pt_2d_upper, _ = cv2.projectPoints(
+                        pt_3d,
+                        np.zeros(3), np.zeros(3),
+                        self.stereo_calib.P1[:, :3], np.zeros(5)
+                    )
+                    # Project to lower camera
+                    pt_2d_lower, _ = cv2.projectPoints(
+                        pt_3d,
+                        np.zeros(3), np.zeros(3),
+                        self.stereo_calib.P2[:, :3], np.zeros(5)
+                    )
+                    # Calculate error
+                    err_upper = np.linalg.norm(upper_points[i] - pt_2d_upper[0, 0])
+                    err_lower = np.linalg.norm(lower_points[i] - pt_2d_lower[0, 0])
+                    reproj_errors_upper.append(err_upper)
+                    reproj_errors_lower.append(err_lower)
+            else:
+                reproj_errors_upper = [np.nan] * len(points_3d)
+                reproj_errors_lower = [np.nan] * len(points_3d)
+
             statistics = {
                 "total_distance_mm": np.sum(distances),
                 "total_time_seconds": time_seconds[-1] - time_seconds[0],
                 "valid_time_intervals": len(valid_distances),
-                "avg_speed_total": np.mean(speeds),
+                "avg_speed_total": np.sum(distances) / (time_seconds[-1] - time_seconds[0]) if (time_seconds[-1] - time_seconds[0]) > 0 else 0,
                 "max_speed": np.max(speeds),
                 "min_speed": np.min(speeds),
                 "std_speed": np.std(speeds),
@@ -1014,11 +1174,15 @@ class TrackAnnotationTool:
                     "z": avg_velocity_xyz[2]
                 },
                 "frame_rate_estimate": len(frames) / (time_seconds[-1] - time_seconds[0]) if (time_seconds[-1] - time_seconds[0]) > 0 else 30.0,
-                "time_range": f"{time_seconds[0]:.3f}s to {time_seconds[-1]:.3f}s"
+                "time_range": f"{time_seconds[0]:.3f}s to {time_seconds[-1]:.3f}s",
+                "reproj_error_upper_mean": np.nanmean(reproj_errors_upper),
+                "reproj_error_upper_std": np.nanstd(reproj_errors_upper),
+                "reproj_error_lower_mean": np.nanmean(reproj_errors_lower),
+                "reproj_error_lower_std": np.nanstd(reproj_errors_lower),
+                "reproj_errors_upper": reproj_errors_upper,
+                "reproj_errors_lower": reproj_errors_lower,
             }
-            
             return statistics
-            
         except Exception as e:
             return {"error": f"Error calculating statistics: {e}"}
 
@@ -1072,6 +1236,34 @@ class TrackAnnotationTool:
                     
                     # Get time range from frame timestamps
                     frame_timestamps = upper_matches['frame_timestamp'].tolist()
+                    if frame_timestamps and len(frame_timestamps) > 1:
+                        # Try to parse start and end times
+                        try:
+                            def parse_time(ts):
+                                if 'time_' in ts and 's' in ts:
+                                    return float(ts.split('time_')[1].replace('s', ''))
+                                elif 'T' in ts:
+                                    from datetime import datetime
+                                    dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                                    return dt.timestamp()
+                                elif re.match(r'\d{8}_\d{6}_\d{6}', ts):
+                                    # Format: YYYYMMDD_HHMMSS_microseconds
+                                    from datetime import datetime
+                                    dt = datetime.strptime(ts, "%Y%m%d_%H%M%S_%f")
+                                    return dt.timestamp()
+                                else:
+                                    return None
+                            t0 = parse_time(frame_timestamps[0])
+                            t1 = parse_time(frame_timestamps[-1])
+                            if t0 is not None and t1 is not None:
+                                actual_time_elapsed = f"{t1 - t0:.3f} s"
+                            else:
+                                actual_time_elapsed = "N/A"
+                        except Exception:
+                            actual_time_elapsed = "N/A"
+                    else:
+                        actual_time_elapsed = "N/A"
+
                     if frame_timestamps and len(frame_timestamps) > 1:
                         time_range = f"{frame_timestamps[0]} to {frame_timestamps[-1]}"
                     else:
@@ -1133,7 +1325,8 @@ class TrackAnnotationTool:
                     '3d_status': status_3d,
                     'distance_mm': distance_mm,
                     'avg_speed_mm_s': avg_speed_mm_s,
-                    'created_at': creation_timestamp
+                    'created_at': creation_timestamp,
+                    'actual_time_elapsed': actual_time_elapsed
                 })
             except Exception as e:
                 print(f"Error processing stereo pair {upper_track_id}, {lower_track_id}: {e}")
@@ -1141,8 +1334,143 @@ class TrackAnnotationTool:
         
         return table_data
 
+    def export_frame_level_3d_statistics(self, output_csv: str):
+        rows = []
+        for match in self.get_stereo_matches_table_data():
+            upper_id = match['upper_track']
+            lower_id = match['lower_track']
+            data_3d = self.get_3d_track_data(upper_id, lower_id)
+            if "error" in data_3d:
+                continue
+            points_3d = data_3d["points_3d"]
+            frames = data_3d["frames"]
+            timestamps = data_3d["frame_timestamps"]
+            stats = data_3d["statistics"]
+            time_seconds = [self._parse_time(ts) for ts in timestamps]
+            velocities = np.zeros_like(points_3d)
+            accelerations = np.zeros_like(points_3d)
+            y_deviations = []
+            # Get original 2D points for deviation calculation
+            upper_camera_track_id = f"upper_{upper_id}"
+            lower_camera_track_id = f"lower_{lower_id}"
+            upper_matches = self.stereo_matches[self.stereo_matches['camera_track_id'] == upper_camera_track_id]
+            lower_matches = self.stereo_matches[self.stereo_matches['camera_track_id'] == lower_camera_track_id]
+            for i, frame in enumerate(frames):
+                uy = upper_matches[upper_matches['frame'] == frame]['y']
+                ly = lower_matches[lower_matches['frame'] == frame]['y']
+                if len(uy) > 0 and len(ly) > 0:
+                    y_deviation = float(uy.iloc[0]) - float(ly.iloc[0])
+                else:
+                    y_deviation = np.nan
+                y_deviations.append(y_deviation)
+            for i in range(1, len(points_3d)):
+                dt = time_seconds[i] - time_seconds[i-1] if time_seconds[i] is not None and time_seconds[i-1] is not None else None
+                if dt and dt > 0:
+                    velocities[i] = (points_3d[i] - points_3d[i-1]) / dt
+            for i in range(2, len(points_3d)):
+                dt = time_seconds[i] - time_seconds[i-1] if time_seconds[i] is not None and time_seconds[i-1] is not None else None
+                if dt and dt > 0:
+                    accelerations[i] = (velocities[i] - velocities[i-1]) / dt
+            for i in range(len(frames)):
+                rows.append({
+                    "pair_id": f"{upper_id}↔{lower_id}",
+                    "frame": frames[i],
+                    "timestamp": timestamps[i],
+                    "x_mm": points_3d[i, 0],
+                    "y_mm": points_3d[i, 1],
+                    "z_mm": points_3d[i, 2],
+                    "vx_mm_s": velocities[i, 0],
+                    "vy_mm_s": velocities[i, 1],
+                    "vz_mm_s": velocities[i, 2],
+                    "ax_mm_s2": accelerations[i, 0],
+                    "ay_mm_s2": accelerations[i, 1],
+                    "az_mm_s2": accelerations[i, 2],
+                    "y_deviation_px": y_deviations[i],
+                    "reproj_error_upper_px": stats["reproj_errors_upper"][i] if "reproj_errors_upper" in stats else np.nan,
+                    "reproj_error_lower_px": stats["reproj_errors_lower"][i] if "reproj_errors_lower" in stats else np.nan
+                })
+        pd.DataFrame(rows).to_csv(output_csv, index=False)
+        print(f"✅ Exported frame-level 3D statistics to {output_csv}")
 
+    def export_track_level_3d_statistics(self, output_csv: str):
+        rows = []
+        for match in self.get_stereo_matches_table_data():
+            upper_id = match['upper_track']
+            lower_id = match['lower_track']
+            data_3d = self.get_3d_track_data(upper_id, lower_id)
+            if "error" in data_3d or "statistics" not in data_3d:
+                continue
+            stats = data_3d["statistics"]
+            avg_vel = stats.get("avg_speed_xyz", {"x": "N/A", "y": "N/A", "z": "N/A"})
+            points_3d = data_3d["points_3d"]
+            timestamps = data_3d["frame_timestamps"]
+            frames = data_3d["frames"]
+            upper_camera_track_id = f"upper_{upper_id}"
+            lower_camera_track_id = f"lower_{lower_id}"
+            upper_matches = self.stereo_matches[self.stereo_matches['camera_track_id'] == upper_camera_track_id]
+            lower_matches = self.stereo_matches[self.stereo_matches['camera_track_id'] == lower_camera_track_id]
+            y_deviations = []
+            for frame in frames:
+                uy = upper_matches[upper_matches['frame'] == frame]['y']
+                ly = lower_matches[lower_matches['frame'] == frame]['y']
+                if len(uy) > 0 and len(ly) > 0:
+                    y_deviation = float(uy.iloc[0]) - float(ly.iloc[0])
+                else:
+                    y_deviation = np.nan
+                y_deviations.append(y_deviation)
+            mean_y_dev = np.nanmean(y_deviations) if len(y_deviations) > 0 else np.nan
+            std_y_dev = np.nanstd(y_deviations) if len(y_deviations) > 0 else np.nan
+            time_seconds = [self._parse_time(ts) for ts in timestamps]
+            velocities = np.zeros_like(points_3d)
+            accelerations = np.zeros_like(points_3d)
+            for i in range(1, len(points_3d)):
+                dt = time_seconds[i] - time_seconds[i-1] if time_seconds[i] is not None and time_seconds[i-1] is not None else None
+                if dt and dt > 0:
+                    velocities[i] = (points_3d[i] - points_3d[i-1]) / dt
+            for i in range(2, len(points_3d)):
+                dt = time_seconds[i] - time_seconds[i-1] if time_seconds[i] is not None and time_seconds[i-1] is not None else None
+                if dt and dt > 0:
+                    accelerations[i] = (velocities[i] - velocities[i-1]) / dt
+            avg_accel = np.mean(accelerations, axis=0) if len(accelerations) > 0 else [0, 0, 0]
+            rows.append({
+                "pair_id": f"{upper_id}↔{lower_id}",
+                "total_distance_mm": stats.get("total_distance_mm", "N/A"),
+                "total_time_seconds": stats.get("total_time_seconds", "N/A"),
+                "avg_speed_mm_s": stats.get("avg_speed_total", "N/A"),
+                "avg_vx_mm_s": avg_vel["x"],
+                "avg_vy_mm_s": avg_vel["y"],
+                "avg_vz_mm_s": avg_vel["z"],
+                "avg_ax_mm_s2": avg_accel[0],
+                "avg_ay_mm_s2": avg_accel[1],
+                "avg_az_mm_s2": avg_accel[2],
+                "max_speed_mm_s": stats.get("max_speed", "N/A"),
+                "min_speed_mm_s": stats.get("min_speed", "N/A"),
+                "std_speed_mm_s": stats.get("std_speed", "N/A"),
+                "frame_rate_estimate": stats.get("frame_rate_estimate", "N/A"),
+                "num_points": data_3d.get("num_points", "N/A"),
+                "upper_track": upper_id,
+                "lower_track": lower_id,
+                "mean_y_deviation_px": mean_y_dev,
+                "std_y_deviation_px": std_y_dev,
+                "mean_reproj_error_upper_px": stats.get("reproj_error_upper_mean", np.nan),
+                "std_reproj_error_upper_px": stats.get("reproj_error_upper_std", np.nan),
+                "mean_reproj_error_lower_px": stats.get("reproj_error_lower_mean", np.nan),
+                "std_reproj_error_lower_px": stats.get("reproj_error_lower_std", np.nan)
+            })
+        pd.DataFrame(rows).to_csv(output_csv, index=False)
+        print(f"✅ Exported track-level 3D statistics to {output_csv}")
 
+    def _parse_time(self, ts):
+        if 'time_' in ts and 's' in ts:
+            return float(ts.split('time_')[1].replace('s', ''))
+        elif 'T' in ts:
+            dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+            return dt.timestamp()
+        elif re.match(r'\d{8}_\d{6}_\d{6}', ts):
+            dt = datetime.strptime(ts, "%Y%m%d_%H%M%S_%f")
+            return dt.timestamp()
+        else:
+            return None
 
     def get_stereo_match_info(self, upper_track: Optional[int], lower_track: Optional[int]) -> Dict:
         """Get information about stereo matches for the selected tracks"""
@@ -1233,12 +1561,36 @@ class TrackAnnotationTool:
             # Save the updated tracks
             self._save_tracks_csv(camera)
             
+            
             print(f"✅ Split {camera} track {track_id} at frame {split_frame} → new track {new_track_id}")
             return True
             
         except Exception as e:
             print(f"❌ Error splitting track: {e}")
             return False
+    
+    def _add_display_track_id_column(self, tracks_df: pd.DataFrame, camera: str) -> pd.DataFrame:
+        """Add display_track_id and oyster columns if they don't exist"""
+        if 'display_track_id' not in tracks_df.columns:
+            tracks_df['display_track_id'] = tracks_df['track_id'].copy()
+            print(f"✅ Added display_track_id column to {camera} tracks")
+        else:
+            print(f"✅ display_track_id column already exists in {camera} tracks")
+        if 'oyster' not in tracks_df.columns:
+            tracks_df['oyster'] = 0  # Default: no oyster
+            print(f"✅ Added oyster column to {camera} tracks")
+        return tracks_df
+    
+    def annotate_oyster(self, camera: str, track_id: int, oyster_value: int):
+        """Annotate the selected track with an oyster value"""
+        if camera == "upper":
+            tracks_df = self.upper_tracks
+        else:
+            tracks_df = self.lower_tracks
+        mask = tracks_df['display_track_id'] == track_id
+        tracks_df.loc[mask, 'oyster'] = oyster_value
+        self._save_tracks_csv(camera)
+        print(f"✅ Annotated {camera} track {track_id} with oyster value {oyster_value}")
 
 # Update the layout to show coordinate system information
 def create_app() -> dash.Dash:
@@ -1383,6 +1735,10 @@ def create_app() -> dash.Dash:
                     dbc.Card([
                         dbc.CardHeader("🔧 Track Editing"),
                         dbc.CardBody([
+                            html.Div([
+                                    html.P("Merging: replaces the displayed track ID of Track 2 with that of Track 1.", className="text-muted mb-1", style={"fontSize": "0.9rem"}),
+                                    html.P("Splitting: assigns a new displayed track ID to points after the current frame.", className="text-muted mb-2", style={"fontSize": "0.9rem"}),
+                                ]),
                             dbc.Row([
                                 dbc.Col([
                                     html.Label("Lower Track ID:", className="form-label"),
@@ -1411,6 +1767,18 @@ def create_app() -> dash.Dash:
                             dbc.Button("Clear Upper Selection", id="btn-clear-upper", color="secondary", size="sm", className="mb-1 w-100"),
                             dbc.Button("Clear Lower Selection", id="btn-clear-lower", color="secondary", size="sm", className="mb-1 w-100"),
                             dbc.Button("Clear All Selections", id="btn-clear-all", color="secondary", size="sm", className="mb-1 w-100"),
+                            dbc.Switch(
+                                id="switch-hide-annotated",
+                                label="Hide annotated tracks",
+                                value=False,
+                                className="mb-2"
+                            ),
+                            dbc.Switch(
+                                id="switch-hide-stereo-matched",
+                                label="Hide stereo matched tracks",
+                                value=False,
+                                className="mb-2"
+                            ),
                             html.Hr(),
                             dbc.Button(
                                 "🔗 Create Stereo Match", 
@@ -1472,11 +1840,15 @@ def create_app() -> dash.Dash:
                             dbc.Row([
                                 dbc.Col([
                                     html.H6("Lower Camera Selection"),
-                                    html.Div(id="lower-track-info-display", style={"minHeight": "120px"})
+                                    html.Div(id="lower-track-info-display", style={"minHeight": "120px"}),
+                                    # dbc.Input(id="lower-oyster-input", type="number", value=0, min=0, max=10, step=1),
+                                    # dbc.Button("Save Oyster", id="btn-save-lower-oyster", color="primary", size="sm", className="mt-1")
                                 ], width=6),
                                 dbc.Col([
                                     html.H6("Upper Camera Selection"),
-                                    html.Div(id="upper-track-info-display", style={"minHeight": "120px"})
+                                    html.Div(id="upper-track-info-display", style={"minHeight": "120px"}),
+                                    # dbc.Input(id="upper-oyster-input", type="number", value=0, min=0, max=10, step=1),
+                                    # dbc.Button("Save Oyster", id="btn-save-upper-oyster", color="primary", size="sm", className="mt-1")
                                 ], width=6),                                
                             ])
                         ])
@@ -1538,8 +1910,16 @@ def create_app() -> dash.Dash:
         dcc.Store(id="current-3d-match-store"),
         dcc.Store(id="selected-stereo-match-store"),
         dcc.Store(id="random-selected-tracks-store"),
+
+        # Add these at the end of your dbc.Container (but before the closing parenthesis):
+        # html.Div([
+        #     dbc.Input(id="lower-oyster-input", type="number", style={"display": "none"}),
+        #     dbc.Input(id="upper-oyster-input", type="number", style={"display": "none"}),
+        # ], style={"display": "none"}),
         
     ], fluid=True)
+
+
     
     # Callback to initialize the tool when a directory is selected
     @app.callback(
@@ -1781,6 +2161,7 @@ def create_app() -> dash.Dash:
         
         return dash.no_update, dash.no_update
 
+
     # Callback for splitting tracks
     @app.callback(
         [Output("upper-image", "figure", allow_duplicate=True),
@@ -1837,27 +2218,38 @@ def create_app() -> dash.Dash:
         Output("upper-image", "figure", allow_duplicate=True),
         [Input("frame-slider", "value"),
         Input("upper-selected-track-store", "data"),
-        Input("random-selected-tracks-store", "data")],
+        Input("random-selected-tracks-store", "data"),
+        Input("switch-hide-annotated", "value"),
+        Input("switch-hide-stereo-matched", "value")],
         [State("tool-store", "data")],
         prevent_initial_call=True
     )
-    def update_upper_display(frame_idx, selected_track, random_tracks, tool_data):
+    def update_upper_display(frame_idx, selected_track, random_tracks, hide_annotated, hide_stereo_matched, tool_data):
         if not tool_data:
             return go.Figure()
-            
         try:
             tool = get_tool_instance(tool_data)
             if not tool:
                 return go.Figure()
-                
             upper_data, _ = tool.get_frame_data(frame_idx)
-            
-            # Extract upper tracks from random selection
+            exclude_ids = set()
+            if hide_annotated:
+                exclude_ids.update(tool.upper_tracks[tool.upper_tracks['oyster'] != 0]['display_track_id'].unique())
+            if hide_stereo_matched:
+                matched_ids = set(tool.stereo_matches[tool.stereo_matches['camera_track_id'].str.startswith('upper_')]['display_track_id'].unique())
+                exclude_ids.update(matched_ids)
             upper_random_tracks = None
-            if random_tracks and 'upper' in random_tracks:
-                upper_random_tracks = random_tracks['upper']
-                
-            return create_image_figure(tool, frame_idx, "upper", upper_data, selected_track, upper_random_tracks)
+            if selected_track is not None:
+                # Show selected track, do not filter
+                return create_image_figure(tool, frame_idx, "upper", upper_data, selected_track)
+            # Only filter random_tracks and all-tracks scenario
+            elif random_tracks and 'upper' in random_tracks:
+                upper_random_tracks = [tid for tid in random_tracks['upper'] if tid not in exclude_ids]
+                return create_image_figure(tool, frame_idx, "upper", upper_data, None, upper_random_tracks)
+            else:
+                # Show all tracks except excluded
+                all_ids = [tid for tid in upper_data.keys() if tid not in exclude_ids]
+                return create_image_figure(tool, frame_idx, "upper", upper_data, None, all_ids)
         except Exception as e:
             print(f"Error updating upper display: {e}")
             return go.Figure()
@@ -1866,27 +2258,38 @@ def create_app() -> dash.Dash:
         Output("lower-image", "figure", allow_duplicate=True),
         [Input("frame-slider", "value"),
         Input("lower-selected-track-store", "data"),
-        Input("random-selected-tracks-store", "data")],
+        Input("random-selected-tracks-store", "data"),
+        Input("switch-hide-annotated", "value"),
+        Input("switch-hide-stereo-matched", "value")],
         [State("tool-store", "data")],
         prevent_initial_call=True
     )
-    def update_lower_display(frame_idx, selected_track, random_tracks, tool_data):
+    def update_lower_display(frame_idx, selected_track, random_tracks, hide_annotated, hide_stereo_matched, tool_data):
         if not tool_data:
             return go.Figure()
-            
         try:
             tool = get_tool_instance(tool_data)
             if not tool:
                 return go.Figure()
-                
             _, lower_data = tool.get_frame_data(frame_idx)
-            
-            # Extract lower tracks from random selection
+            exclude_ids = set()
+            if hide_annotated:
+                exclude_ids.update(tool.lower_tracks[tool.lower_tracks['oyster'] != 0]['display_track_id'].unique())
+            if hide_stereo_matched:
+                matched_ids = set(tool.stereo_matches[tool.stereo_matches['camera_track_id'].str.startswith('lower_')]['display_track_id'].unique())
+                exclude_ids.update(matched_ids)
+            # Only filter random_tracks and all-tracks scenario
             lower_random_tracks = None
-            if random_tracks and 'lower' in random_tracks:
-                lower_random_tracks = random_tracks['lower']
-                
-            return create_image_figure(tool, frame_idx, "lower", lower_data, selected_track, lower_random_tracks)
+            if selected_track is not None:
+                # Show selected track, do not filter
+                return create_image_figure(tool, frame_idx, "lower", lower_data, selected_track)
+            elif random_tracks and 'lower' in random_tracks:
+                lower_random_tracks = [tid for tid in random_tracks['lower'] if tid not in exclude_ids]
+                return create_image_figure(tool, frame_idx, "lower", lower_data, None, lower_random_tracks)
+            else:
+                # Show all tracks except excluded
+                all_ids = [tid for tid in lower_data.keys() if tid not in exclude_ids]
+                return create_image_figure(tool, frame_idx, "lower", lower_data, None, all_ids)
         except Exception as e:
             print(f"Error updating lower display: {e}")
             return go.Figure()
@@ -1961,22 +2364,18 @@ def create_app() -> dash.Dash:
     @app.callback(
         Output("upper-track-info-display", "children"),
         [Input("upper-selected-track-store", "data")],
-        [State("tool-store", "data")]
+        [State("tool-store", "data")],
+        prevent_initial_call=True
     )
     def update_upper_track_info(selected_track, tool_data):
         if not tool_data or selected_track is None:
             return html.P("No track selected", className="text-muted")
-        
         try:
             tool = get_tool_instance(tool_data)
             if not tool:
                 return html.P("Tool not available", className="text-muted")
-            
             track_info = tool.get_track_info(selected_track, "upper")
-            
-            if not track_info:
-                return html.P("Track not found", className="text-muted")
-            
+            oyster_val = track_info.get('oyster', 0) if track_info else 0
             return html.Div([
                 html.P(f"🎯 Display Track ID: {track_info['display_track_id']}", className="fw-bold"),
                 html.P(f"📋 Original Track IDs: {', '.join(map(str, track_info['original_track_ids']))}", className="text-muted small"),
@@ -1985,7 +2384,12 @@ def create_app() -> dash.Dash:
                 html.P(f"📍 Last Position: {track_info['last_position']}"),
                 html.P(f"🏃 Avg Velocity: {track_info['avg_velocity']:.2f} px/s"),
                 html.P(f"📏 Avg Area: {track_info.get('upper_avg_area', 'N/A'):.1f}" if 'upper_avg_area' in track_info else ""),
-                html.P(f"🔄 Motion: {track_info.get('upper_motion_pattern', 'unknown')}")
+                html.P(f"🔄 Motion: {track_info.get('upper_motion_pattern', 'unknown')}"),
+                html.Div([
+                    html.Label("🦪 Oyster annotation (1='no oyster', 2-9='oyster', 0='unknown'):"),
+                    dbc.Input(id="upper-oyster-input", type="number", value=oyster_val, min=0, max=10, step=1),
+                    dbc.Button("Save Annotation", id="btn-save-upper-oyster", color="primary", size="sm", className="mt-1")
+                ])
             ])
         except Exception as e:
             return html.P(f"Error: {e}", className="text-danger")
@@ -1994,22 +2398,18 @@ def create_app() -> dash.Dash:
     @app.callback(
         Output("lower-track-info-display", "children"),
         [Input("lower-selected-track-store", "data")],
-        [State("tool-store", "data")]
-    )
+        [State("tool-store", "data")],
+        prevent_initial_call=True
+        )
     def update_lower_track_info(selected_track, tool_data):
         if not tool_data or selected_track is None:
             return html.P("No track selected", className="text-muted")
-        
         try:
             tool = get_tool_instance(tool_data)
             if not tool:
                 return html.P("Tool not available", className="text-muted")
-            
             track_info = tool.get_track_info(selected_track, "lower")
-            
-            if not track_info:
-                return html.P("Track not found", className="text-muted")
-            
+            oyster_val = track_info.get('oyster', 0) if track_info else 0
             return html.Div([
                 html.P(f"🎯 Display Track ID: {track_info['display_track_id']}", className="fw-bold"),
                 html.P(f"📋 Original Track IDs: {', '.join(map(str, track_info['original_track_ids']))}", className="text-muted small"),
@@ -2018,7 +2418,12 @@ def create_app() -> dash.Dash:
                 html.P(f"📍 Last Position: {track_info['last_position']}"),
                 html.P(f"🏃 Avg Velocity: {track_info['avg_velocity']:.2f} px/s"),
                 html.P(f"📏 Avg Area: {track_info.get('lower_avg_area', 'N/A'):.1f}" if 'lower_avg_area' in track_info else ""),
-                html.P(f"🔄 Motion: {track_info.get('lower_motion_pattern', 'unknown')}")
+                html.P(f"🔄 Motion: {track_info.get('lower_motion_pattern', 'unknown')}"),
+                html.Div([
+                    html.Label("🦪 Oyster annotation (1='no oyster', 2-9='oyster', 0='unknown'):"),
+                    dbc.Input(id="lower-oyster-input", type="number", value=oyster_val, min=0, max=10, step=1),
+                    dbc.Button("Save Annotation", id="btn-save-lower-oyster", color="primary", size="sm", className="mt-1")
+                ])
             ])
         except Exception as e:
             return html.P(f"Error: {e}", className="text-danger")
@@ -2118,194 +2523,169 @@ def create_app() -> dash.Dash:
     # Update the stereo match creation callback to use tool from store
     @app.callback(
         [Output("3d-viewer-collapse", "is_open", allow_duplicate=True),
-         Output("3d-trajectory-plot", "figure", allow_duplicate=True),
-         Output("3d-info-display", "children", allow_duplicate=True),
-         Output("current-3d-match-store", "data", allow_duplicate=True)],
+        Output("3d-trajectory-plot", "figure", allow_duplicate=True),
+        Output("3d-info-display", "children", allow_duplicate=True),
+        Output("current-3d-match-store", "data", allow_duplicate=True)],
         [Input("btn-create-stereo-match", "n_clicks")],
         [State("upper-selected-track-store", "data"),
-         State("lower-selected-track-store", "data"),
-         State("frame-slider", "value"),
-         State("tool-store", "data")],
+        State("lower-selected-track-store", "data"),
+        State("frame-slider", "value"),
+        State("tool-store", "data")],
         prevent_initial_call=True
     )
+    
     def create_stereo_match_and_show_3d(n_clicks, upper_track, lower_track, current_frame, tool_data):
         if not n_clicks or upper_track is None or lower_track is None or not tool_data:
             return False, go.Figure(), "", None
-        
+
         try:
             tool = get_tool_instance(tool_data)
             if not tool:
                 return False, go.Figure(), "Tool not available", None
-            
+
             success = tool.create_stereo_match(upper_track, lower_track, current_frame)
-            
+
             if success:
+                match_id = f"{upper_track}↔{lower_track}"  # <-- FIX: define match_id
+
                 # Create success notification
                 notification = dbc.Alert(
                     f"✅ Created stereo match: Upper Track {upper_track} ↔ Lower Track {lower_track}",
                     color="success",
                     dismissable=True
                 )
-                
-                # Now automatically generate and show 3D trajectory
-                try:
-                    # Find the newly created match
-                    match = tool.stereo_matches[
-                        (tool.stereo_matches['upper_track_id'] == upper_track) & 
-                        (tool.stereo_matches['lower_track_id'] == lower_track)
-                    ]
-                    
-                    if len(match) > 0:
-                        match_id = match.iloc[0]['match_id']
-                        
-                        # Get 3D data
-                        data_3d = tool.get_3d_track_data(match_id)
-                        
-                        if "error" not in data_3d:
-                            # Create 3D plot (same as in your existing code)
-                            fig = go.Figure()
-                            
-                            points_3d = data_3d["points_3d"]
-                            frames = data_3d["frames"]
-                            
-                            # Add 3D trajectory
-                            fig.add_trace(go.Scatter3d(
-                                x=points_3d[:, 0],
-                                y=points_3d[:, 1], 
-                                z=points_3d[:, 2],
-                                mode='markers+lines',
-                                marker=dict(
-                                    size=6,
-                                    color=frames,
-                                    colorscale='Viridis',
-                                    colorbar=dict(title="Frame"),
-                                    line=dict(width=1, color='black')
-                                ),
-                                line=dict(color='blue', width=4),
-                                name=f"Match {match_id}",
-                                hovertemplate="<b>Frame %{marker.color}</b><br>" +
-                                             "X: %{x:.2f} mm<br>" +
-                                             "Y: %{y:.2f} mm<br>" +
-                                             "Z: %{z:.2f} mm<br>" +
-                                             "<extra></extra>"
-                            ))
-                            
-                            # Add start and end markers
-                            if len(points_3d) > 0:
-                                fig.add_trace(go.Scatter3d(
-                                    x=[points_3d[0, 0]],
-                                    y=[points_3d[0, 1]],
-                                    z=[points_3d[0, 2]],
-                                    mode='markers',
-                                    marker=dict(size=12, color='green', symbol='diamond'),
-                                    name='Start',
-                                    hovertemplate="<b>Start</b><br>Frame: %{text}<br>" +
-                                                 "X: %{x:.2f} mm<br>Y: %{y:.2f} mm<br>Z: %{z:.2f} mm<extra></extra>",
-                                    text=[frames[0]]
-                                ))
-                                
-                                fig.add_trace(go.Scatter3d(
-                                    x=[points_3d[-1, 0]],
-                                    y=[points_3d[-1, 1]],
-                                    z=[points_3d[-1, 2]], 
-                                    mode='markers',
-                                    marker=dict(size=12, color='red', symbol='diamond'),
-                                    name='End',
-                                    hovertemplate="<b>End</b><br>Frame: %{text}<br>" +
-                                                 "X: %{x:.2f} mm<br>Y: %{y:.2f} mm<br>Z: %{z:.2f} mm<extra></extra>",
-                                    text=[frames[-1]]
-                                ))
-                            
-                            # Set layout
-                            fig.update_layout(
-                                title=f"3D Trajectory - Match {match_id} (Upper {upper_track} ↔ Lower {lower_track})",
-                                scene=dict(
-                                    xaxis_title="X (mm)",
-                                    yaxis_title="Y (mm)", 
-                                    zaxis_title="Z (mm)",
-                                    aspectmode='data'
-                                ),
-                                legend=dict(x=0, y=1),
-                                margin=dict(l=0, r=0, t=40, b=0)
-                            )
-                            
-                            # Create info display with enhanced statistics
-                            if "statistics" in data_3d:
-                                stats = data_3d["statistics"]
-                                
-                                info_text = html.Div([
-                                    html.H6("📊 3D Track Statistics:", className="mb-2"),
-                                    dbc.Row([
-                                        dbc.Col([
-                                            html.P(f"• Match ID: {match_id}", className="mb-1"),
-                                            html.P(f"• Upper Track: {data_3d['upper_track_id']}, Lower Track: {data_3d['lower_track_id']}", className="mb-1"),
-                                            html.P(f"• Points: {data_3d['num_points']}", className="mb-1"),
-                                            html.P(f"• Frame range: {min(frames)} - {max(frames)}", className="mb-1"),
-                                        ], width=6),
-                                        dbc.Col([
-                                            html.P(f"• Total distance: {stats['total_distance_mm']:.2f} mm", className="mb-1"),
-                                            html.P(f"• Total time: {stats['total_time_seconds']:.3f} s", className="mb-1"),
-                                            html.P(f"• Valid intervals: {stats['valid_time_intervals']}", className="mb-1"),
-                                        ], width=6)
-                                    ]),
-                                    html.Hr(),
-                                    html.H6("🏃 Velocity Analysis:", className="mb-2"),
-                                    dbc.Row([
-                                        dbc.Col([
-                                            html.P("Average Velocities:", className="fw-bold mb-1"),
-                                            html.P(f"• X: {stats['avg_speed_xyz']['x']:.2f} mm/s", className="mb-1"),
-                                            html.P(f"• Y: {stats['avg_speed_xyz']['y']:.2f} mm/s", className="mb-1"),
-                                            html.P(f"• Z: {stats['avg_speed_xyz']['z']:.2f} mm/s", className="mb-1"),
-                                        ], width=6),
-                                        dbc.Col([
-                                            html.P("Speed Statistics:", className="fw-bold mb-1"),
-                                            html.P(f"• Average: {stats['avg_speed_total']:.2f} mm/s", className="mb-1"),
-                                            html.P(f"• Maximum: {stats['max_speed']:.2f} mm/s", className="mb-1"),
-                                            html.P(f"• Minimum: {stats['min_speed']:.2f} mm/s", className="mb-1"),
-                                        ], width=6)
-                                    ])
-                                ])
-                            else:
-                                info_text = html.Div([
-                                    html.P(f"📊 3D Track Statistics:"),
-                                    html.P(f"• Match ID: {match_id}"),
-                                    html.P(f"• Upper Track: {data_3d['upper_track_id']}, Lower Track: {data_3d['lower_track_id']}"),
-                                    html.P(f"• Points: {data_3d['num_points']}"),
-                                    html.P(f"• Frame range: {min(frames)} - {max(frames)}"),
-                                    html.P(f"• Total distance: {np.sum(np.linalg.norm(np.diff(points_3d, axis=0), axis=1)):.2f} mm") if len(points_3d) > 1 else html.P("• Total distance: 0 mm"),
-                                ])
-                            
-                            return True, fig, info_text, match_id
-                        
-                        else:
-                            # Show error in 3D display
-                            error_notification = dbc.Alert(
-                                f"✅ Created stereo match but failed to generate 3D trajectory: {data_3d['error']}",
-                                color="warning",
-                                dismissable=True
-                            )
-                            return True, go.Figure(), f"Error: {data_3d['error']}", match_id
-                    
-                except Exception as e:
-                    print(f"Error generating 3D visualization: {e}")
+
+                # Get 3D data for the new match
+                data_3d = tool.get_3d_track_data(upper_track, lower_track)
+                if "error" not in data_3d:
+                    fig = go.Figure()
+                    points_3d = data_3d["points_3d"]
+                    frames = data_3d["frames"]
+
+                    fig.add_trace(go.Scatter3d(
+                        x=points_3d[:, 0],
+                        y=points_3d[:, 1], 
+                        z=points_3d[:, 2],
+                        mode='markers+lines',
+                        marker=dict(
+                            size=6,
+                            color=frames,
+                            colorscale='Viridis',
+                            colorbar=dict(title="Frame"),
+                            line=dict(width=1, color='black')
+                        ),
+                        line=dict(color='blue', width=4),
+                        name=f"Match {match_id}",
+                        hovertemplate="<b>Frame %{marker.color}</b><br>" +
+                                        "X: %{x:.2f} mm<br>" +
+                                        "Y: %{y:.2f} mm<br>" +
+                                        "Z: %{z:.2f} mm<br>" +
+                                        "<extra></extra>"
+                    ))
+
+                    # Add start and end markers
+                    if len(points_3d) > 0:
+                        fig.add_trace(go.Scatter3d(
+                            x=[points_3d[0, 0]],
+                            y=[points_3d[0, 1]],
+                            z=[points_3d[0, 2]],
+                            mode='markers',
+                            marker=dict(size=12, color='green', symbol='diamond'),
+                            name='Start',
+                            hovertemplate="<b>Start</b><br>Frame: %{text}<br>" +
+                                            "X: %{x:.2f} mm<br>Y: %{y:.2f} mm<br>Z: %{z:.2f} mm<extra></extra>",
+                            text=[frames[0]]
+                        ))
+
+                        fig.add_trace(go.Scatter3d(
+                            x=[points_3d[-1, 0]],
+                            y=[points_3d[-1, 1]],
+                            z=[points_3d[-1, 2]], 
+                            mode='markers',
+                            marker=dict(size=12, color='red', symbol='diamond'),
+                            name='End',
+                            hovertemplate="<b>End</b><br>Frame: %{text}<br>" +
+                                            "X: %{x:.2f} mm<br>Y: %{y:.2f} mm<br>Z: %{z:.2f} mm<extra></extra>",
+                            text=[frames[-1]]
+                        ))
+
+                    fig.update_layout(
+                        title=f"3D Trajectory - Match {match_id} (Upper {upper_track} ↔ Lower {lower_track})",
+                        scene=dict(
+                            xaxis_title="X (mm)",
+                            yaxis_title="Y (mm)", 
+                            zaxis_title="Z (mm)",
+                            aspectmode='data'
+                        ),
+                        legend=dict(x=0, y=1),
+                        margin=dict(l=0, r=0, t=40, b=0)
+                    )
+
+                    # Create info display with enhanced statistics
+                    if "statistics" in data_3d:
+                        stats = data_3d["statistics"]
+                        info_text = html.Div([
+                            html.H6("📊 3D Track Statistics:", className="mb-2"),
+                            dbc.Row([
+                                dbc.Col([
+                                    html.P(f"• Match ID: {match_id}", className="mb-1"),
+                                    html.P(f"• Upper Track: {data_3d['upper_track_id']}, Lower Track: {data_3d['lower_track_id']}", className="mb-1"),
+                                    html.P(f"• Points: {data_3d['num_points']}", className="mb-1"),
+                                    html.P(f"• Frame range: {min(frames)} - {max(frames)}", className="mb-1"),
+                                ], width=6),
+                                dbc.Col([
+                                    html.P(f"• Total distance: {stats['total_distance_mm']:.2f} mm", className="mb-1"),
+                                    html.P(f"• Total time: {stats['total_time_seconds']:.3f} s", className="mb-1"),
+                                    html.P(f"• Valid intervals: {stats['valid_time_intervals']}", className="mb-1"),
+                                ], width=6)
+                            ]),
+                            html.Hr(),
+                            html.H6("🏃 Velocity Analysis:", className="mb-2"),
+                            dbc.Row([
+                                dbc.Col([
+                                    html.P("Average Velocities:", className="fw-bold mb-1"),
+                                    html.P(f"• X: {stats['avg_speed_xyz']['x']:.2f} mm/s", className="mb-1"),
+                                    html.P(f"• Y: {stats['avg_speed_xyz']['y']:.2f} mm/s", className="mb-1"),
+                                    html.P(f"• Z: {stats['avg_speed_xyz']['z']:.2f} mm/s", className="mb-1"),
+                                ], width=6),
+                                dbc.Col([
+                                    html.P("Speed Statistics:", className="fw-bold mb-1"),
+                                    html.P(f"• Average: {stats['avg_speed_total']:.2f} mm/s", className="mb-1"),
+                                    html.P(f"• Maximum: {stats['max_speed']:.2f} mm/s", className="mb-1"),
+                                    html.P(f"• Minimum: {stats['min_speed']:.2f} mm/s", className="mb-1"),
+                                ], width=6)
+                            ])
+                        ])
+                    else:
+                        info_text = html.Div([
+                            html.P(f"📊 3D Track Statistics:"),
+                            html.P(f"• Match ID: {match_id}"),
+                            html.P(f"• Upper Track: {data_3d['upper_track_id']}, Lower Track: {data_3d['lower_track_id']}"),
+                            html.P(f"• Points: {data_3d['num_points']}"),
+                            html.P(f"• Frame range: {min(frames)} - {max(frames)}"),
+                            html.P(f"• Total distance: {np.sum(np.linalg.norm(np.diff(points_3d, axis=0), axis=1)):.2f} mm") if len(points_3d) > 1 else html.P("• Total distance: 0 mm"),
+                        ])
+
+                    return True, fig, info_text, match_id
+
+                else:
                     error_notification = dbc.Alert(
-                        f"✅ Created stereo match but failed to generate 3D visualization: {e}",
+                        f"✅ Created stereo match but failed to generate 3D trajectory: {data_3d['error']}",
                         color="warning",
                         dismissable=True
                     )
-                    return False, go.Figure(), "", None
-                
-                return False, go.Figure(), "", None
-        
-            else:
-                failure_notification = dbc.Alert(
-                    f"❌ Failed to create stereo match - one or both tracks may already be matched",
-                    color="danger",
-                    dismissable=True
-                )
-                return False, go.Figure(), failure_notification, None
+                    return True, go.Figure(), f"Error: {data_3d['error']}", match_id
+
         except Exception as e:
-            return False, go.Figure(), f"Error: {e}", None
+            print(f"Error generating 3D visualization: {e}")
+            error_notification = dbc.Alert(
+                f"✅ Created stereo match but failed to generate 3D visualization: {e}",
+                color="warning",
+                dismissable=True
+            )
+            return False, go.Figure(), "", None
+
+        return False, go.Figure(), "", None
     
     # Update the stereo matches table callback to use tool from store
     @app.callback(
@@ -2342,7 +2722,8 @@ def create_app() -> dash.Dash:
                         html.Td(str(row_data['lower_track'])),
                         html.Td(f"{row_data['common_frames']} ({row_data['upper_frame_count']}/{row_data['lower_frame_count']})"),
                         html.Td(row_data['frame_range']),
-                        html.Td(row_data['time_range']),  # NEW column
+                        html.Td(row_data['time_range']),
+                        html.Td(row_data['actual_time_elapsed']),
                         html.Td(row_data['3d_status']),
                         html.Td(row_data['distance_mm']),
                         html.Td(row_data['avg_speed_mm_s']),
@@ -2363,7 +2744,8 @@ def create_app() -> dash.Dash:
                     html.Th("Lower Track", style={"width": "8%"}),
                     html.Th("Frames (U/L)", style={"width": "10%"}),
                     html.Th("Frame Range", style={"width": "12%"}),
-                    html.Th("Time Range", style={"width": "15%"}),  # NEW column
+                    html.Th("Time Range", style={"width": "15%"}),
+                    html.Th("Elapsed Time (s)", style={"width": "10%"}),  # NEW column
                     html.Th("3D Status", style={"width": "8%"}),
                     html.Th("Distance (mm)", style={"width": "10%"}),
                     html.Th("Avg Speed (mm/s)", style={"width": "12%"}),
@@ -2628,6 +3010,41 @@ def create_app() -> dash.Dash:
             return True, fig, info_text, match_id
         except Exception as e:
             return is_open, go.Figure(), f"Error: {e}", None
+        
+    @app.callback(
+        Output("upper-track-info-display", "children", allow_duplicate=True),
+        [Input("btn-save-upper-oyster", "n_clicks")],
+        [State("upper-selected-track-store", "data"),
+        State("upper-oyster-input", "value"),
+        State("tool-store", "data")],
+        prevent_initial_call=True
+    )
+    def save_upper_oyster(n_clicks, selected_track, oyster_value, tool_data):
+        if not n_clicks or not tool_data or selected_track is None:
+            return dash.no_update
+        tool = get_tool_instance(tool_data)
+        if not tool:
+            return dash.no_update
+        tool.annotate_oyster("upper", selected_track, oyster_value)
+        return dash.no_update
+    
+    @app.callback(
+        Output("lower-track-info-display", "children", allow_duplicate=True),
+        [Input("btn-save-lower-oyster", "n_clicks")],
+        [State("lower-selected-track-store", "data"),
+        State("lower-oyster-input", "value"),
+        State("tool-store", "data")],
+        prevent_initial_call=True
+    )
+    def save_lower_oyster(n_clicks, selected_track, oyster_value, tool_data):
+        if not n_clicks or not tool_data or selected_track is None:
+            return dash.no_update
+        tool = get_tool_instance(tool_data)
+        if not tool:
+            return dash.no_update
+        tool.annotate_oyster("lower", selected_track, oyster_value)
+        return dash.no_update
+
     return app
 
 def create_image_figure(tool: TrackAnnotationTool, frame_idx: int, camera: str, 
